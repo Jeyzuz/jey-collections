@@ -69,12 +69,12 @@ public class QuadTreeDemo implements Demo {
 				renderer.rect(paddedBounds.x, paddedBounds.y, paddedBounds.width, paddedBounds.height);
 			}
 			if (expensiveLookup != null)
-				renderer.rect(expensiveLookup.x - 1, expensiveLookup.y - 1, 2, 2);
+				renderer.rect(expensiveLookup.x - 1, expensiveLookup.y - 1, 3, 3);
 			renderer.setColor(Color.GREEN);
 			Rectangle in = tree.getRoot().at(mouseInWorld.x, mouseInWorld.y).bounds;
 			renderer.rect(in.x, in.y, in.width, in.height);
 			if (cheapLookup != null)
-				renderer.rect(cheapLookup.x - 1, cheapLookup.y - 1, 2, 2);
+				renderer.rect(cheapLookup.x - 1, cheapLookup.y - 1, 3, 3);
 		}
 		if (Gdx.input.isKeyPressed(Keys.SPACE)) {
 			float x = MathUtils.random(SIZE);
