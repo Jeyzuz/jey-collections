@@ -4,96 +4,179 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 
-public class QuadTree<T> {
+public class QuadTree<T extends QuadElement> {
 	
 	public int maxDepth = 8;
 	public int elementsPerNode = 8;
-	public boolean createArrays = false;
+	public int joinThreshold = 8;
+	public boolean allocateArrays = false;
 	
-	private QuadTreeNode<T> root;
-	private Array<QuadTreeElement<T>> results;
+	private QuadNode<T> root;
+	private Array<QuadNode<T>> nodeIterator;
+	private Array<T> elementIterator;
 	
 	public QuadTree(Rectangle bounds) {
-		root = new QuadTreeNode<T>(bounds, null);
-		results = new Array<QuadTreeElement<T>>();
+		root = new QuadNode<T>(bounds);
+		nodeIterator = new Array<QuadNode<T>>();
+		elementIterator = new Array<T>();
 	}
 	
 	public QuadTree(float x, float y, float width, float height) {
 		this(new Rectangle(x, y, width, height));
 	}
 	
-	public Array<QuadTreeElement<T>> get(Rectangle bounds) {
-		if (!root.bounds.overlaps(bounds)) {
-			throw new IllegalArgumentException(bounds + " is out of bounds of " + root.bounds);
-		}
-		return root.elementsIn(bounds, results());
+	public QuadNode<T> getRoot() {
+		return root;
 	}
 	
-	public QuadTreeElement<T> get(float x, float y, boolean checkNeighbors) {
-		if (!root.bounds.contains(x, y)) {
-			throw new IllegalArgumentException(x + ", " + y + " is out of bounds of " + root.bounds);
-		}		
-		if (checkNeighbors) {
-			Rectangle paddedBounds = new Rectangle(root.at(x, y).bounds);
-			float separationX = root.bounds.width / (1 << maxDepth);
-			float separationY = root.bounds.height / (1 << maxDepth);
-			paddedBounds.set(paddedBounds.x - separationX, paddedBounds.y - separationY, 
-					paddedBounds.width + 2 * separationX, paddedBounds.height + 2 * separationY);
-			return closest(x, y, root.elementsNear(paddedBounds, results()));
-		} else {
-			return closest(x, y, root.elementsNear(x, y, results()));
-		}
+	public int size() {
+		return root.size;
+	}
+
+	public Array<QuadNode<T>> nodes() {
+		return root.all(getNodeIterator());
 	}
 	
-	public void add(float x, float y, T data) {
-		if (!root.bounds.contains(x, y)) {
-			throw new IllegalArgumentException(x + ", " + y + " is out of bounds of " + root.bounds);
+	public Array<T> elements() {
+		Array<T> visited = getElementIterator();
+		for (QuadNode<T> node : nodes()) {
+			visited.addAll(node.elements);
 		}
-		root.addElement(x, y, data, maxDepth, elementsPerNode);
+		return visited;
 	}
 	
-	public boolean remove(T data, float x, float y, boolean checkNeighbors) {
-		if (!root.bounds.contains(x, y)) {
-			throw new IllegalArgumentException(x + ", " + y + " is out of bounds of " + root.bounds);
-		}
-		if (checkNeighbors) {
-			Rectangle paddedBounds = new Rectangle(root.at(x, y).bounds);
-			float separationX = root.bounds.width / (1 << maxDepth);
-			float separationY = root.bounds.height / (1 << maxDepth);
-			paddedBounds.set(paddedBounds.x - separationX, paddedBounds.y - separationY, 
-					paddedBounds.width + 2 * separationX, paddedBounds.height + 2 * separationY);
-			boolean removed = false;
-			for (QuadTreeNode<T> node : root.in(paddedBounds, new Array<QuadTreeNode<T>>())) {
-				if (node.removeElement(x, y, data) ) {
-					removed = true;
+	public Array<T> elementsIn(Rectangle bounds) {
+		Array<T> visited = getElementIterator();
+		for (QuadNode<T> node : root.in(bounds, getNodeIterator())) {
+			for (T element : node.elements) {
+				if (bounds.contains(element.getX(), element.getY())) {
+					visited.add(element);
 				}
 			}
-			return removed;
+		}
+		return visited;
+	}
+	
+	public Array<T> elementsIn(float x, float y, float width, float height) {
+		return (elementsIn(new Rectangle(x, y, width, height)));
+	}
+	
+	public Array<T> elementsNear(float x, float y) {
+		if (allocateArrays) {
+			return root.at(x, y).elements;
 		} else {
-			return root.removeElement(x, y, data);
+			Array<T> visited = getElementIterator();
+			for (T element : root.at(x, y).elements) {
+				visited.add(element);
+			}
+			return visited;
 		}
 	}
 	
-	public QuadTreeElement<T> closest(float x, float y, Array<QuadTreeElement<T>> elements) {
-		QuadTreeElement<T> closest = null;
-		for (QuadTreeElement<T> element : elements) {
-			if (closest == null || Vector2.dst2(element.x, element.y, x, y) < Vector2.dst2(closest.x, closest.y, x, y)) {
+	public Array<T> elementsNear(Rectangle bounds) {
+		Array<T> visited = getElementIterator();
+		for (QuadNode<T> node : root.in(bounds, getNodeIterator())) {
+			visited.addAll(node.elements);
+		}
+		return visited;
+	}
+	
+	public T elementNearest(float x, float y) {
+		T closest = null;
+		for (T element : elementsNear(x, y)) {
+			if (closest == null || Vector2.dst2(element.getX(), element.getY(), x, y) < Vector2.dst2(closest.getX(), closest.getY(), x, y)) {
 				closest = element;
 			}
 		}
 		return closest;
 	}
 	
-	private Array<QuadTreeElement<T>> results() {
-		if (createArrays) {
-			return new Array<QuadTreeElement<T>>();
+	public T elementNearest(float x, float y, Rectangle bounds) {
+		T closest = null;
+		for (T element : elementsIn(bounds)) {
+			if (closest == null || Vector2.dst2(element.getX(), element.getY(), x, y) < Vector2.dst2(closest.getX(), closest.getY(), x, y)) {
+				closest = element;
+			}
 		}
-		results.clear();
-		return results;
+		return closest;
 	}
-
-	public QuadTreeNode<T> getRoot() {
-		return root;
+	
+	public void add(T element) {
+		QuadNode<T> node = root.at(element.getX(), element.getY());
+		node.addElement(element);
+		if (node.elements.size > elementsPerNode && node.depth < maxDepth) {
+			node.split();
+		}
 	}
+	
+	public boolean remove(T element) {
+		QuadNode<T> node = root.at(element.getX(), element.getY());
+		if (node.removeElement(element)) {
+			if (joinThreshold >= 0 && !node.isRoot() && node.parent.size < joinThreshold) {
+				node.parent.join();
+			}
+			return true;
+		}
+		return false;
+	}
+	
+	public boolean remove(T element, Rectangle bounds) {
+		for (QuadNode<T> node : root.in(bounds, getNodeIterator())) {
+			if (node.removeElement(element)) {
+				if (joinThreshold >= 0 && !node.isRoot() &&  node.parent.size < joinThreshold) {
+					node.parent.join();
+				}
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	public T removeNearest(float x, float y) {
+		QuadNode<T> node = root.at(x, y);
+		T closest = null;
+		for (T element : node.elements) {
+			if (closest == null || Vector2.dst2(element.getX(), element.getY(), x, y) < Vector2.dst2(closest.getX(), closest.getY(), x, y)) {
+				closest = element;
+			}
+		}
+		if (node.removeElement(closest)) {
+			if (joinThreshold >= 0 && !node.isRoot() && node.parent.size < joinThreshold) {
+				node.parent.join();
+			}
+		}
+		return closest;
+	}
+	
+	private Array<T> getElementIterator() {
+		if (allocateArrays) {
+			return new Array<T>();
+		} else {
+			elementIterator.clear();
+			return elementIterator;
+		}
+	}
+	
+	private Array<QuadNode<T>> getNodeIterator() {
+		if (allocateArrays) {
+			return new Array<QuadNode<T>>();
+		} else {
+			nodeIterator.clear();
+			return nodeIterator;
+		}
+	}
+	
+	@Override
+	public String toString() {
+		String s = "";
+		for (QuadNode<T> node : nodes()) {
+			for (int i = 0; i < node.depth; i++) {
+				s += "   ";
+			}
+			s += node.bounds.toString() + ", depth=" + node.depth + ", elements=" + node.elements.size + "\n";
+		}
+		return s;
+	}
+	
 
 }
